@@ -1,204 +1,90 @@
+const CACHE_TTL = 10800; // 3 hours
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": `public, max-age=${CACHE_TTL}`
+    }
+  });
+}
+
 export default {
   async fetch(request) {
+
     const url = new URL(request.url);
 
-    // API endpoint
-    if (url.pathname === "/extract") {
-      const target = url.searchParams.get("url");
-
-      if (!target) {
-        return new Response(
-          JSON.stringify({ success: false, message: "Missing URL" }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
-      }
-
-      try {
-        const cache = caches.default;
-
-        const cacheKey = new Request(
-          "https://cache.local/?url=" + encodeURIComponent(target)
-        );
-
-        const cached = await cache.match(cacheKey);
-
-        if (cached) {
-          return cached;
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS"
         }
-
-        const pageRes = await fetch(target, {
-          headers: {
-            "User-Agent": "Mozilla/5.0"
-          }
-        });
-
-        const html = await pageRes.text();
-
-        const match = html.match(
-          /href="(https:\/\/cdn\.juicybits\.site\/files\/[^"]+)"/i
-        );
-
-        if (!match) {
-          return new Response(
-            JSON.stringify({
-              success: false,
-              message: "JuicyBits URL not found"
-            }),
-            {
-              status: 404,
-              headers: { "Content-Type": "application/json" }
-            }
-          );
-        }
-
-        const response = new Response(
-          JSON.stringify({
-            success: true,
-            downloadUrl: match[1]
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "Cache-Control": "public, max-age=10800"
-            }
-          }
-        );
-
-        await cache.put(cacheKey, response.clone());
-
-        return response;
-
-      } catch (err) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: err.message
-          }),
-          {
-            status: 500,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
-      }
+      });
     }
 
-    // HTML page
-    return new Response(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MessyCloud Extractor</title>
+    const target = url.searchParams.get("url");
 
-<style>
-body{
-  font-family:Arial,sans-serif;
-  max-width:700px;
-  margin:40px auto;
-  padding:20px;
-}
-h1{
-  text-align:center;
-}
-input{
-  width:100%;
-  padding:12px;
-  box-sizing:border-box;
-}
-button{
-  margin-top:10px;
-  padding:12px 20px;
-  cursor:pointer;
-}
-#result{
-  margin-top:20px;
-}
-textarea{
-  width:100%;
-  height:120px;
-}
-.download-btn{
-  display:inline-block;
-  padding:12px 20px;
-  background:#28a745;
-  color:#fff;
-  text-decoration:none;
-  border-radius:5px;
-}
-</style>
-</head>
-<body>
+    if (!target) {
+      return json({
+        success: false,
+        message: "Missing URL"
+      }, 400);
+    }
 
-<h1>MessyCloud Link Extractor</h1>
+    const cache = caches.default;
 
-<form id="extractForm">
-  <input
-    type="url"
-    id="url"
-    placeholder="Paste MessyCloud URL"
-    required
-  >
-  <button type="submit">Extract</button>
-</form>
-
-<div id="result"></div>
-
-<script>
-document.getElementById("extractForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  const inputUrl = document.getElementById("url").value;
-
-  const result = document.getElementById("result");
-
-  result.innerHTML = "Finding link...";
-
-  try {
-    const res = await fetch(
-      "/extract?url=" + encodeURIComponent(inputUrl)
+    const cacheKey = new Request(
+      "https://cache.local/?url=" + encodeURIComponent(target)
     );
 
-    const data = await res.json();
+    // Check cache
+    let cached = await cache.match(cacheKey);
 
-    if (!data.success) {
-      result.innerHTML =
-        "<p>" + data.message + "</p>";
-      return;
+    if (cached) {
+      return cached;
     }
 
-    result.innerHTML = \`
-      <p><strong>Found URL:</strong></p>
+    try {
 
-      <textarea readonly>\${data.downloadUrl}</textarea>
+      const pageRes = await fetch(target, {
+        headers: {
+          "User-Agent": "Mozilla/5.0"
+        }
+      });
 
-      <br><br>
+      const html = await pageRes.text();
 
-      <a
-        class="download-btn"
-        href="\${data.downloadUrl}"
-        target="_blank"
-      >
-        Open Download Link
-      </a>
-    \`;
+      const match = html.match(
+        /href="(https:\/\/cdn\.juicybits\.site\/files\/[^"]+)"/i
+      );
 
-  } catch (err) {
-    result.innerHTML =
-      "<p>Error: " + err.message + "</p>";
-  }
-});
-</script>
-
-</body>
-</html>
-`, {
-      headers: {
-        "Content-Type": "text/html;charset=UTF-8"
+      if (!match) {
+        return json({
+          success: false,
+          message: "Link not found"
+        }, 404);
       }
-    });
+
+      const response = json({
+        success: true,
+        downloadUrl: match[1],
+        cached: false
+      });
+
+      await cache.put(cacheKey, response.clone());
+
+      return response;
+
+    } catch (err) {
+
+      return json({
+        success: false,
+        message: err.message
+      }, 500);
+
+    }
   }
-};
+}
