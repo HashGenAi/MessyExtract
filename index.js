@@ -2,128 +2,200 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    if (request.method === "POST") {
-      const formData = await request.formData();
-      const pageUrl = formData.get("url");
+    // API endpoint
+    if (url.pathname === "/extract") {
+      const target = url.searchParams.get("url");
 
-      if (!pageUrl) {
-        return new Response("Missing URL", { status: 400 });
+      if (!target) {
+        return new Response(
+          JSON.stringify({ success: false, message: "Missing URL" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
       }
 
       try {
-        const res = await fetch(pageUrl, {
+        const cache = caches.default;
+
+        const cacheKey = new Request(
+          "https://cache.local/?url=" + encodeURIComponent(target)
+        );
+
+        const cached = await cache.match(cacheKey);
+
+        if (cached) {
+          return cached;
+        }
+
+        const pageRes = await fetch(target, {
           headers: {
             "User-Agent": "Mozilla/5.0"
           }
         });
 
-        const html = await res.text();
+        const html = await pageRes.text();
 
         const match = html.match(
           /href="(https:\/\/cdn\.juicybits\.site\/files\/[^"]+)"/i
         );
 
-        const result = match
-          ? `<p><strong>Download Link:</strong></p>
-             <textarea style="width:100%;height:100px;">${match[1]}</textarea>`
-          : `<p>No JuicyBits link found.</p>`;
+        if (!match) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              message: "JuicyBits URL not found"
+            }),
+            {
+              status: 404,
+              headers: { "Content-Type": "application/json" }
+            }
+          );
+        }
 
-        return new Response(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>MessyCloud Extractor</title>
-<style>
-body{
-  font-family:Arial,sans-serif;
-  max-width:800px;
-  margin:40px auto;
-  padding:20px;
-}
-input{
-  width:100%;
-  padding:12px;
-}
-button{
-  margin-top:10px;
-  padding:12px 20px;
-}
-textarea{
-  margin-top:15px;
-}
-</style>
-</head>
-<body>
-<h2>MessyCloud Link Extractor</h2>
-
-<form method="POST">
-<input
-  type="url"
-  name="url"
-  placeholder="Paste MessyCloud URL"
-  required
->
-<button type="submit">Extract</button>
-</form>
-
-<hr>
-
-${result}
-
-</body>
-</html>
-        `, {
-          headers: {
-            "Content-Type": "text/html;charset=UTF-8"
+        const response = new Response(
+          JSON.stringify({
+            success: true,
+            downloadUrl: match[1]
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "public, max-age=10800"
+            }
           }
-        });
+        );
+
+        await cache.put(cacheKey, response.clone());
+
+        return response;
 
       } catch (err) {
-        return new Response(`Error: ${err.message}`, { status: 500 });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: err.message
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
       }
     }
 
+    // HTML page
     return new Response(`
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MessyCloud Extractor</title>
+
 <style>
 body{
   font-family:Arial,sans-serif;
-  max-width:800px;
+  max-width:700px;
   margin:40px auto;
   padding:20px;
+}
+h1{
+  text-align:center;
 }
 input{
   width:100%;
   padding:12px;
+  box-sizing:border-box;
 }
 button{
   margin-top:10px;
   padding:12px 20px;
+  cursor:pointer;
+}
+#result{
+  margin-top:20px;
+}
+textarea{
+  width:100%;
+  height:120px;
+}
+.download-btn{
+  display:inline-block;
+  padding:12px 20px;
+  background:#28a745;
+  color:#fff;
+  text-decoration:none;
+  border-radius:5px;
 }
 </style>
 </head>
 <body>
 
-<h2>MessyCloud Link Extractor</h2>
+<h1>MessyCloud Link Extractor</h1>
 
-<form method="POST">
-<input
-  type="url"
-  name="url"
-  placeholder="Paste MessyCloud URL"
-  required
->
-<button type="submit">Extract</button>
+<form id="extractForm">
+  <input
+    type="url"
+    id="url"
+    placeholder="Paste MessyCloud URL"
+    required
+  >
+  <button type="submit">Extract</button>
 </form>
+
+<div id="result"></div>
+
+<script>
+document.getElementById("extractForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const inputUrl = document.getElementById("url").value;
+
+  const result = document.getElementById("result");
+
+  result.innerHTML = "Finding link...";
+
+  try {
+    const res = await fetch(
+      "/extract?url=" + encodeURIComponent(inputUrl)
+    );
+
+    const data = await res.json();
+
+    if (!data.success) {
+      result.innerHTML =
+        "<p>" + data.message + "</p>";
+      return;
+    }
+
+    result.innerHTML = \`
+      <p><strong>Found URL:</strong></p>
+
+      <textarea readonly>\${data.downloadUrl}</textarea>
+
+      <br><br>
+
+      <a
+        class="download-btn"
+        href="\${data.downloadUrl}"
+        target="_blank"
+      >
+        Open Download Link
+      </a>
+    \`;
+
+  } catch (err) {
+    result.innerHTML =
+      "<p>Error: " + err.message + "</p>";
+  }
+});
+</script>
 
 </body>
 </html>
-    `, {
+`, {
       headers: {
         "Content-Type": "text/html;charset=UTF-8"
       }
