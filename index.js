@@ -1,3 +1,5 @@
+const ALLOWED_DOMAIN = "www.jiorockers.online";
+
 const CACHE_TTL = 10800; // 3 hours
 
 function json(data, status = 200) {
@@ -15,6 +17,16 @@ export default {
   async fetch(request) {
 
     const url = new URL(request.url);
+
+    if (
+      url.hostname !== ALLOWED_DOMAIN &&
+      url.hostname !== ALLOWED_DOMAIN.replace(/^www\./, "")
+    ) {
+      return json({
+        success: false,
+        message: "Forbidden"
+      }, 403);
+    }
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -40,7 +52,6 @@ export default {
       "https://cache.local/?url=" + encodeURIComponent(target)
     );
 
-    // Check cache
     let cached = await cache.match(cacheKey);
 
     if (cached) {
