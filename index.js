@@ -58,7 +58,20 @@ export default {
     let cached = await cache.match(cacheKey);
 
     if (cached) {
-      return cached;
+      try {
+        const data = await cached.clone().json();
+
+        const age = Date.now() - data.cachedAt;
+
+        if (age < CACHE_TTL * 1000) {
+          return cached;
+        }
+
+        await cache.delete(cacheKey);
+
+      } catch (e) {
+        await cache.delete(cacheKey);
+      }
     }
 
     try {
@@ -85,7 +98,8 @@ export default {
       const response = json({
         success: true,
         downloadUrl: match[1],
-        cached: false
+        cached: false,
+        cachedAt: Date.now()
       });
 
       await cache.put(cacheKey, response.clone());
