@@ -1,11 +1,12 @@
 const CACHE_TTL = 10800; // 3 hours
+const ALLOWED_DOMAIN = "https://www.jiorockers.online";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": ALLOWED_DOMAIN,
       "Cache-Control": `public, max-age=${CACHE_TTL}`
     }
   });
@@ -14,12 +15,26 @@ function json(data, status = 200) {
 export default {
   async fetch(request) {
 
+    const origin = request.headers.get("Origin") || "";
+    const referer = request.headers.get("Referer") || "";
+
+    // Allow only requests coming from jiorockers.online
+    if (
+      origin !== ALLOWED_DOMAIN &&
+      !referer.startsWith(ALLOWED_DOMAIN)
+    ) {
+      return json({
+        success: false,
+        message: "Forbidden"
+      }, 403);
+    }
+
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": ALLOWED_DOMAIN,
           "Access-Control-Allow-Methods": "GET, OPTIONS"
         }
       });
@@ -40,7 +55,6 @@ export default {
       "https://cache.local/?url=" + encodeURIComponent(target)
     );
 
-    // Check cache
     let cached = await cache.match(cacheKey);
 
     if (cached) {
