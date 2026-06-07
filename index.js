@@ -1,4 +1,3 @@
-const ALLOWED_SITE = "jiorockers.online";
 const CACHE_TTL = 10800; // 3 hours
 
 function json(data, status = 200) {
@@ -35,28 +34,6 @@ export default {
       }, 400);
     }
 
-    let targetUrl;
-
-    try {
-      targetUrl = new URL(target);
-    } catch {
-      return json({
-        success: false,
-        message: "Invalid URL"
-      }, 400);
-    }
-
-    // Allow only URLs from the specified site
-    if (
-      targetUrl.hostname !== ALLOWED_SITE &&
-      targetUrl.hostname !== `www.${ALLOWED_SITE}`
-    ) {
-      return json({
-        success: false,
-        message: "Forbidden"
-      }, 403);
-    }
-
     const cache = caches.default;
 
     const cacheKey = new Request(
@@ -72,7 +49,7 @@ export default {
 
     try {
 
-      const pageRes = await fetch(targetUrl.toString(), {
+      const pageRes = await fetch(target, {
         headers: {
           "User-Agent": "Mozilla/5.0"
         }
